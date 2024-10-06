@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Save the World Game</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        /* Loading screen styles */
+        .loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #282c34;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+
+        .loading-screen h1 {
+            font-size: 3rem;
+            color: white;
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Popup styles */
+        .popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 20px;
+            box-shadow: 0px 0px 15px rgba(0, 0, 0, 0.2);
+            z-index: 10000;
+            text-align: center;
+            transition: transform 0.5s ease;
+        }
+
+        .popup.show {
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        .popup h2 {
+            font-size: 2rem;
+        }
+
+        .popup button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 1.2rem;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        .popup button:hover {
+            background-color: #45a049;
+        }
+
+        .popup button.no {
+            background-color: #f44336;
+        }
+
+        /* Basic styles for the game */
+        .start-container, .quiz-container, .result-container, #map {
+            display: none;
+        }
+
+        /* Animation for showing the popup */
+        @keyframes showPopup {
+            0% { opacity: 0; transform: translateY(-50px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Loading Screen -->
+    <div class="loading-screen">
+        <h1>🌍 Loading...</h1>
+    </div>
+
+    <!-- Music Consent Popup -->
+    <div class="popup" id="music-popup">
+        <h2>🎵 Do you want to listen to music while playing? 🎶</h2>
+        <button id="yes-music">Yes 😎</button>
+        <button class="no" id="no-music">No 🙅</button>
+    </div>
+
+    <!-- Audio element -->
+    <audio id="background-audio" loop>
+        <source src="earth.mp3" type="audio/mp3">
+    </audio>
+
+    <!-- Initial Prompt -->
+    <div class="start-container">
+        <div>
+            <h1>Save the World Game</h1>
+            <button id="start-game-btn" class="btn">Start Game</button>
+            <button id="issues-cleared-btn" class="btn">Issues Cleared</button>
+        </div>
+        <div class='planet-container'>
+            <div class='night'></div>
+            <div class='day'></div>
+            <div class='clouds'></div>
+            <div class='inner-shadow'></div>
+        </div>
+    </div>
+
+    <!-- Map Display -->
+    <div id="map"></div>
+
+    <!-- Quiz Container -->
+    <div class="quiz-container">
+        <h2 id="quiz-title"></h2>
+        <div id="quiz-questions"></div>
+        <button id="submit-quiz" class="btn">Submit</button>
+        <button id="back-button" class="btn back-button">Back</button>
+    </div>
+
+    <!-- Overlay for Quiz Result -->
+    <div class="overlay"></div>
+
+    <!-- Result Container -->
+    <div class="result-container">
+        <h2 id="result-message"></h2>
+        <button id="try-again-btn" class="btn">Try Again</button>
+    </div>
+
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="game.js"></script>
+    
+    <script>
+        // Show loading screen until the page is ready
+        window.addEventListener('load', function () {
+            const loadingScreen = document.querySelector('.loading-screen');
+            const musicPopup = document.getElementById('music-popup');
+
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';  // Hide loading screen
+                musicPopup.classList.add('show');  // Show music popup
+            }, 2000);
+        });
+
+        // Handle Music Popup Choices
+        document.getElementById('yes-music').addEventListener('click', function () {
+            document.getElementById('background-audio').play();  // Play music
+            closeMusicPopup();
+        });
+
+        document.getElementById('no-music').addEventListener('click', function () {
+            closeMusicPopup();
+        });
+
+        // Close music popup and show the game start screen
+        function closeMusicPopup() {
+            document.getElementById('music-popup').style.display = 'none';  // Hide popup
+            document.querySelector('.start-container').style.display = 'block';  // Show the start container
+        }
+
+        // Game Data and State Variables
+        let gameData = {
+            continents: {
+                "Africa": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "Asia": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "Europe": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "North America": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "South America": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "Australia": { cleared: false, issuesCleared: 0, totalIssues: 5 },
+                "Antarctica": { cleared: false, issuesCleared: 0, totalIssues: 5 }
+            },
+            totalIssuesCleared: 0,
+            totalIssues: 35,
+            totalClearedContinents: 0
+        };
+
+        // UI elements
+        const startContainer = document.querySelector('.start-container');
+        const mapContainer = document.getElementById('map');
+        const quizContainer = document.querySelector('.quiz-container');
+        const resultContainer = document.querySelector('.result-container');
+        const overlay = document.querySelector('.overlay');
+
+        const startGameBtn = document.getElementById('start-game-btn');
+        const issuesClearedBtn = document.getElementById('issues-cleared-btn');
+        const submitQuizBtn = document.getElementById('submit-quiz');
+        const tryAgainBtn = document.getElementById('try-again-btn');
+        const backButton = document.getElementById('back-button');
+
+        let currentIssue = '';
+        let currentContinent = '';
+        let currentQuestionIndex = 0;
+        let correctAnswers = 0;
+        let quizData = [];
+
+        // Sample quiz data for issues
+        // Sample quiz data for issues
+const issueQuizzes = {
+    "Water Scarcity": [
+        { question: "Should you conserve water at home?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is it wise to invest in rainwater harvesting?", options: ["Yes", "No"], answer: 0 },
+        { question: "Do you continue using more water than necessary?", options: ["Yes", "No"], answer: 1 },
+        { question: "Should governments enforce water restrictions?", options: ["Yes", "No"], answer: 0 },
+        { question: "Do you support cleaning rivers?", options: ["Yes", "No"], answer: 0 }
+    ],
+    "Deforestation": [
+        { question: "Do you support reforestation?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is cutting trees for agriculture good?", options: ["Yes", "No"], answer: 1 },
+        { question: "Should industries reduce paper usage?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is protecting wildlife habitats important?", options: ["Yes", "No"], answer: 0 },
+        { question: "Do you use paper instead of plastic?", options: ["Yes", "No"], answer: 1 }
+    ],
+    "Air Pollution": [
+        { question: "Should you use public transport?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is planting trees a way to reduce pollution?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should factories be regulated for emissions?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should you burn waste openly?", options: ["Yes", "No"], answer: 1 },
+        { question: "Should we ban fossil fuels?", options: ["Yes", "No"], answer: 0 }
+    ],
+    "Plastic Pollution": [
+        { question: "Do you use reusable bags?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should we reduce single-use plastic?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is recycling plastic effective?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should plastic bags be banned?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should you buy bottled water?", options: ["Yes", "No"], answer: 1 }
+    ],
+    "Global Warming": [
+        { question: "Is reducing carbon emissions necessary?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should we invest in renewable energy?", options: ["Yes", "No"], answer: 0 },
+        { question: "Should people ignore climate change?", options: ["Yes", "No"], answer: 1 },
+        { question: "Do you support reducing industrial emissions?", options: ["Yes", "No"], answer: 0 },
+        { question: "Is coal burning a cause of global warming?", options: ["Yes", "No"], answer: 0 }
+    ]
+};
+
+        
+
+        // Initialize Map
+        const map = L.map('map').setView([20, 0], 2);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        // Start Game
+        startGameBtn.addEventListener('click', () => {
+            startContainer.style.display = 'none';
+            mapContainer.style.display = 'block';
+            map.invalidateSize();
+        });
+
+        // Show Issues Cleared Progress
+        issuesClearedBtn.addEventListener('click', () => {
+            const clearedPercentage = Math.floor((gameData.totalIssuesCleared / gameData.totalIssues) * 100);
+            alert(`Total issues cleared: ${clearedPercentage}%`);
+        });
+
+        // Add markers to map for issues
+        const continentIssues = {
+            "Africa": [
+                { issue: "Water Scarcity", lat: 1.3521, lng: 32.5811 },
+                { issue: "Deforestation", lat: -1.2921, lng: 36.8219 },
+                { issue: "Air Pollution", lat: 30.0331, lng: 31.2336 },
+                { issue: "Plastic Pollution", lat: -6.7924, lng: 39.2083 },
+                { issue: "Global Warming", lat: -29.8587, lng: 31.0218 }
+            ],
+            "Asia": [
+                { issue: "Water Scarcity", lat: 35.6762, lng: 139.6503 },
+                { issue: "Deforestation", lat: 13.7563, lng: 100.5018 },
+                { issue: "Air Pollution", lat: 28.7041, lng: 77.1025 },
+                { issue: "Plastic Pollution", lat: 1.3521, lng: 103.8198 },
+                { issue: "Global Warming", lat: 31.2304, lng: 121.4737 }
+            ],
+            "Europe": [
+                { issue: "Water Scarcity", lat: 48.8566, lng: 2.3522 },
+                { issue: "Deforestation", lat: 50.1109, lng: 8.6821 },
+                { issue: "Air Pollution", lat: 51.5074, lng: -0.1278 },
+                { issue: "Plastic Pollution", lat: 52.3676, lng: 4.9041 },
+                { issue: "Global Warming", lat: 41.9028, lng: 12.4964 }
+            ],
+            "North America": [
+                { issue: "Water Scarcity", lat: 34.0522, lng: -118.2437 },
+                { issue: "Deforestation", lat: 40.7306, lng: -73.9352 },
+                { issue: "Air Pollution", lat: 41.8781, lng: -87.6298 },
+                { issue: "Plastic Pollution", lat: 29.7604, lng: -95.3698 },
+                { issue: "Global Warming", lat: 19.4326, lng: -99.1332 }
+            ],
+            "South America": [
+                { issue: "Water Scarcity", lat: -23.5505, lng: -46.6333 },
+                { issue: "Deforestation", lat: -34.6037, lng: -58.3816 },
+                { issue: "Air Pollution", lat: -22.9068, lng: -43.1729 },
+                { issue: "Plastic Pollution", lat: -12.0464, lng: -77.0428 },
+                { issue: "Global Warming", lat: -33.4489, lng: -70.6693 }
+            ],
+            "Australia": [
+                { issue: "Water Scarcity", lat: -33.8688, lng: 151.2093 },
+                { issue: "Deforestation", lat: -27.4698, lng: 153.0251 },
+                { issue: "Air Pollution", lat: -37.8136, lng: 144.9631 },
+                { issue: "Plastic Pollution", lat: -31.9505, lng: 115.8605 },
+                { issue: "Global Warming", lat: -34.9285, lng: 138.6007 }
+            ],
+            "Antarctica": [
+                { issue: "Water Scarcity", lat: -82.8628, lng: 135.0000 },
+                { issue: "Deforestation", lat: -75.2509, lng: -0.0713 },
+                { issue: "Air Pollution", lat: -66.1603, lng: 111.4194 },
+                { issue: "Plastic Pollution", lat: -72.9480, lng: 75.1903 },
+                { issue: "Global Warming", lat: -74.8496, lng: -10.4712 }
+            ]
+        };
+
+        for (const [continent, issues] of Object.entries(continentIssues)) {
+            const markerGroup = L.layerGroup().addTo(map);
+            for (const issue of issues) {
+                const marker = L.marker([issue.lat, issue.lng])
+                    .bindPopup(`<b>${issue.issue}</b><br>Click to start quiz.`)
+                    .on('click', () => openQuiz(issue.issue, continent))
+                    .addTo(markerGroup);
+            }
+        }
+
+        // Open quiz based on selected issue
+        function openQuiz(issue, continent) {
+            currentIssue = issue;
+            currentContinent = continent;
+            currentQuestionIndex = 0;
+            correctAnswers = 0;
+            quizData = issueQuizzes[issue];
+            showQuestion(currentQuestionIndex);
+            quizContainer.style.display = 'block';
+            overlay.style.display = 'block';
+        }
+
+        // Show questions one by one
+        function showQuestion(index) {
+            if (index < quizData.length) {
+                document.getElementById('quiz-title').innerText = quizData[index].question;
+                let optionsHTML = '';
+                quizData[index].options.forEach((option, i) => {
+                    optionsHTML += `<label>
+                        <input type="radio" name="question" value="${i}">
+                        ${option}
+                    </label><br>`;
+                });
+                document.getElementById('quiz-questions').innerHTML = optionsHTML;
+            } else {
+                handleQuizEnd();
+            }
+        }
+
+        // Submit quiz and handle results
+        submitQuizBtn.addEventListener('click', () => {
+            const selectedOption = document.querySelector('input[name="question"]:checked');
+            if (selectedOption) {
+                if (parseInt(selectedOption.value) === quizData[currentQuestionIndex].answer) {
+                    correctAnswers++;
+                }
+                currentQuestionIndex++;
+                showQuestion(currentQuestionIndex);
+            } else {
+                alert("Please select an option!");
+            }
+        });
+
+        // Handle quiz end and show results
+        function handleQuizEnd() {
+            let resultMessage = '';
+            if (correctAnswers >= 4) {
+                resultMessage = "You have Prevented a Calamity!";
+                gameData.continents[currentContinent].issuesCleared++;
+                gameData.totalIssuesCleared++;
+                if (gameData.continents[currentContinent].issuesCleared >= 3) {
+                    alert(`You have saved ${currentContinent}!`);
+                }
+            } else {
+                resultMessage = "You couldn't prevent the calamity.";
+                document.getElementById('try-again-btn').style.display = 'block';
+            }
+            document.getElementById('result-message').innerText = resultMessage;
+            resultContainer.style.display = 'block';
+            overlay.style.display = 'block';
+        }
+
+        // Retry quiz
+        tryAgainBtn.addEventListener('click', () => {
+            resultContainer.style.display = 'none';
+            tryAgainBtn.style.display = 'none';
+            openQuiz(currentIssue, currentContinent);
+        });
+
+        // Back to map from quiz
+        backButton.addEventListener('click', () => {
+            quizContainer.style.display = 'none';
+            overlay.style.display = 'none';
+        });
+    </script>
+
+</body>
+</html>
